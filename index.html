@@ -1219,16 +1219,17 @@ body {
    Sets: { id, name, series, releaseDate, totalCards, logo }
    Sealed: { name, productType, image, prices:{market,...}, priceHistory:[...] }
 ════════════════════════════════════════════════ */
-const KEY  = 'pokeprice_pro_a1677b26f021f07b0c6cfe7453b4e9d21fca133f2a134282';
-const BASE = 'https://www.pokemonpricetracker.com/api/v2';
+// Calls go to the local proxy server (proxy.py) at localhost:3001
+// The proxy forwards them to PokemonPriceTracker with the API key server-side
+const BASE = '/api';
 
 async function api(path, params = {}) {
-  const url = new URL(BASE + path);
+  const url = new URL('http://localhost:3001' + BASE + path);
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== '' && v !== false)
       url.searchParams.set(k, String(v));
   }
-  const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + KEY } });
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`${r.status} — ${(await r.text().catch(() => '')).slice(0, 120)}`);
   return r.json();
 }

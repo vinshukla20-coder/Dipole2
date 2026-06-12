@@ -1,0 +1,1868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CardLedger — Pokémon TCG Prices</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ─────────────────────────────────────────────
+   TOKENS
+───────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink:       #0e0c0a;
+  --surface:   #1c1814;
+  --lift:      #252018;
+  --border:    #352e28;
+  --border2:   #453c34;
+  --gold:      #f0c040;
+  --gold-dim:  #a88820;
+  --cream:     #e8e0d0;
+  --muted:     #8a8070;
+  --up:        #48c774;
+  --dn:        #e84040;
+  --blue:      #5090e0;
+  --r:         8px;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  background: var(--ink);
+  color: var(--cream);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─────────────────────────────────────────────
+   SCROLLBAR
+───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+/* ─────────────────────────────────────────────
+   SPINNER
+───────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 32px; height: 32px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* ─────────────────────────────────────────────
+   APP SHELL — sidebar + main
+───────────────────────────────────────────── */
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+/* ─────────────────────────────────────────────
+   SIDEBAR
+───────────────────────────────────────────── */
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-brand {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.brand-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.35rem;
+  color: var(--gold);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+.brand-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sidebar-search {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+}
+.sidebar-search svg {
+  position: absolute;
+  left: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.sidebar-search input {
+  width: 100%;
+  background: var(--lift);
+  border: 1px solid var(--border);
+  color: var(--cream);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  padding: 7px 10px 7px 30px;
+  border-radius: var(--r);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.sidebar-search input:focus { border-color: var(--gold-dim); }
+.sidebar-search input::placeholder { color: var(--muted); }
+
+.sidebar-sets {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.series-group-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  padding: 10px 8px 4px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border: 1px solid transparent;
+}
+.set-row:hover { background: var(--lift); }
+.set-row.active {
+  background: rgba(240, 192, 64, 0.08);
+  border-color: rgba(240, 192, 64, 0.25);
+}
+.set-row-name {
+  font-size: 0.82rem;
+  color: var(--cream);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.set-row.active .set-row-name { color: var(--gold); }
+.set-row-count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────
+   MAIN PANEL
+───────────────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ─────────────────────────────────────────────
+   TOP BAR
+───────────────────────────────────────────── */
+.topbar {
+  height: 52px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+}
+.topbar-search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 440px;
+}
+.topbar-search-wrap svg {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+#global-search {
+  width: 100%;
+  background: var(--lift);
+  border: 1px solid var(--border);
+  color: var(--cream);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  padding: 6px 10px 6px 30px;
+  border-radius: var(--r);
+  outline: none;
+  transition: border-color 0.15s;
+}
+#global-search:focus { border-color: var(--gold-dim); }
+#global-search::placeholder { color: var(--muted); }
+
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.topbar-btn {
+  background: var(--lift);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  padding: 5px 12px;
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.topbar-btn:hover { color: var(--cream); border-color: var(--border2); }
+.topbar-btn.active { color: var(--gold); border-color: var(--gold-dim); background: rgba(240,192,64,0.07); }
+
+/* ─────────────────────────────────────────────
+   CONTENT AREA
+───────────────────────────────────────────── */
+.content { flex: 1; overflow-y: auto; }
+
+/* ─────────────────────────────────────────────
+   VIEWS
+───────────────────────────────────────────── */
+.view { display: none; }
+.view.active { display: block; }
+
+/* ─────────────────────────────────────────────
+   EMPTY HOME
+───────────────────────────────────────────── */
+.home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 400px;
+  gap: 12px;
+  text-align: center;
+  padding: 2rem;
+}
+.home-empty-icon {
+  font-size: 3rem;
+  opacity: 0.25;
+  margin-bottom: 4px;
+}
+.home-empty-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.4rem;
+  color: var(--cream);
+  opacity: 0.6;
+}
+.home-empty-sub {
+  font-size: 0.82rem;
+  color: var(--muted);
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* ─────────────────────────────────────────────
+   SET DETAIL HEADER
+───────────────────────────────────────────── */
+.set-header {
+  padding: 20px 24px 0;
+  border-bottom: 1px solid var(--border);
+}
+.set-header-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.set-logo-wrap {
+  height: 44px;
+  display: flex;
+  align-items: center;
+}
+.set-logo-wrap img {
+  max-height: 44px;
+  max-width: 180px;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 6px rgba(0,0,0,0.4));
+}
+.set-logo-text {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.5rem;
+  color: var(--gold);
+  line-height: 1;
+}
+.set-header-meta { flex: 1; min-width: 0; }
+.set-header-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.5rem;
+  color: var(--cream);
+  line-height: 1.1;
+  margin-bottom: 3px;
+}
+.set-header-series {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.set-header-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.stat-block .stat-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.stat-block .stat-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--gold);
+}
+.stat-block .stat-val.plain {
+  font-size: 0.82rem;
+  color: var(--cream);
+  font-weight: 500;
+}
+
+/* ─────────────────────────────────────────────
+   TABS
+───────────────────────────────────────────── */
+.tab-row {
+  display: flex;
+  gap: 0;
+  border-bottom: none;
+}
+.tab-btn {
+  padding: 9px 20px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.tab-btn:hover { color: var(--cream); }
+.tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ─────────────────────────────────────────────
+   FILTER BAR
+───────────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.filter-bar input, .filter-bar select {
+  background: var(--lift);
+  border: 1px solid var(--border);
+  color: var(--cream);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  padding: 6px 10px;
+  border-radius: var(--r);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.filter-bar input:focus, .filter-bar select:focus { border-color: var(--gold-dim); }
+.filter-bar input::placeholder { color: var(--muted); }
+.filter-bar input { min-width: 180px; flex: 1; max-width: 280px; }
+.filter-count {
+  margin-left: auto;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+/* ─────────────────────────────────────────────
+   CARD GRID — the signature element
+───────────────────────────────────────────── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 14px;
+  padding: 20px 24px 40px;
+}
+
+/* The card tile — sleeved card aesthetic */
+.c-tile {
+  position: relative;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: transform 0.22s cubic-bezier(.34,1.56,.64,1), box-shadow 0.22s;
+  transform-style: preserve-3d;
+}
+.c-tile:hover {
+  transform: rotate(1.8deg) translateY(-6px);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(240,192,64,0.3);
+  z-index: 5;
+}
+
+/* Holo shimmer for rare cards */
+.c-tile.holo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: linear-gradient(115deg,
+    transparent 20%, rgba(255,220,80,0.06) 30%, rgba(100,200,255,0.06) 40%,
+    rgba(180,100,255,0.06) 50%, rgba(80,220,180,0.06) 60%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.22s;
+  pointer-events: none;
+}
+.c-tile.holo:hover::after { opacity: 1; }
+
+.c-tile-inner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.c-img-wrap {
+  aspect-ratio: 2.5 / 3.5;
+  background: var(--lift);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+.c-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.c-img-wrap .no-art {
+  font-family: 'DM Serif Display', serif;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 8px;
+  font-style: italic;
+}
+
+/* Card number printed in corner like real cards */
+.c-num {
+  position: absolute;
+  bottom: 5px;
+  right: 7px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.56rem;
+  color: rgba(255,255,255,0.45);
+  background: rgba(0,0,0,0.45);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.c-info {
+  padding: 8px 9px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.c-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--cream);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.c-rarity {
+  font-size: 0.62rem;
+  color: var(--muted);
+}
+.c-price-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
+}
+.c-price {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--cream);
+}
+.c-arrow {
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.arr-up { color: var(--up); }
+.arr-dn { color: var(--dn); }
+.arr-fl { color: var(--muted); }
+
+/* ─────────────────────────────────────────────
+   SEALED GRID
+───────────────────────────────────────────── */
+.sealed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  gap: 14px;
+  padding: 20px 24px 40px;
+}
+
+.s-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  display: flex;
+  flex-direction: column;
+}
+.s-tile:hover {
+  border-color: var(--gold-dim);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  transform: translateY(-2px);
+}
+.s-tile-img {
+  background: var(--lift);
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.s-tile-img img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  padding: 8px;
+}
+.s-tile-body {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+.s-tile-name {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--cream);
+  line-height: 1.3;
+}
+.s-tile-type {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.s-tile-price-row {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.s-tile-price {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gold);
+}
+.s-tile-trend {
+  font-size: 0.67rem;
+  color: var(--muted);
+}
+
+/* ─────────────────────────────────────────────
+   GRADED GRID
+───────────────────────────────────────────── */
+.graded-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  padding: 20px 24px 40px;
+}
+.g-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.g-tile:hover { border-color: rgba(130,80,200,0.4); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+.g-tile-top { display: flex; gap: 10px; align-items: flex-start; }
+.g-tile-img {
+  width: 58px; height: 80px;
+  object-fit: contain;
+  border-radius: 5px;
+  background: var(--lift);
+  flex-shrink: 0;
+}
+.g-tile-info { flex: 1; min-width: 0; }
+.g-tile-name {
+  font-size: 0.85rem; font-weight: 600; color: var(--cream);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+.g-tile-sub { font-size: 0.68rem; color: var(--muted); margin-bottom: 4px; }
+.g-tile-raw {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.g-tile-raw span { color: var(--up); font-weight: 600; }
+.grade-row {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 6px;
+}
+.grade-cell {
+  background: var(--lift);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 4px;
+  text-align: center;
+}
+.grade-cell .gc-l {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.grade-cell .gc-v {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--gold);
+}
+.grade-cell.g10 { border-color: rgba(240,192,64,0.3); background: rgba(240,192,64,0.05); }
+.grade-cell.g9  { border-color: rgba(72,199,116,0.3); background: rgba(72,199,116,0.04); }
+.grade-cell.g8  { border-color: rgba(80,144,224,0.3); background: rgba(80,144,224,0.04); }
+
+/* ─────────────────────────────────────────────
+   GLOBAL SEARCH RESULTS
+───────────────────────────────────────────── */
+.gsr-header {
+  padding: 20px 24px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0;
+}
+.gsr-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.3rem;
+  color: var(--cream);
+  margin-bottom: 4px;
+}
+.gsr-meta {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--muted);
+  padding-bottom: 14px;
+}
+
+/* ─────────────────────────────────────────────
+   LOADING / ERROR / EMPTY STATES
+───────────────────────────────────────────── */
+.state-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 260px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  padding: 2rem;
+  text-align: center;
+}
+.state-center.error { color: var(--dn); }
+.state-center .err-detail {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-top: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  max-width: 360px;
+  word-break: break-all;
+}
+
+/* ─────────────────────────────────────────────
+   CARD MODAL
+───────────────────────────────────────────── */
+.overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(8,6,4,0.88);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.18s;
+}
+.overlay.open { opacity: 1; pointer-events: all; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 760px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  transform: scale(0.97) translateY(8px);
+  transition: transform 0.18s;
+}
+.overlay.open .modal { transform: scale(1) translateY(0); }
+
+.modal-close {
+  position: absolute; top: 14px; right: 14px;
+  background: var(--lift); border: 1px solid var(--border2);
+  color: var(--muted); border-radius: 6px;
+  width: 28px; height: 28px;
+  cursor: pointer; font-size: 0.9rem;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2;
+  transition: color 0.12s, border-color 0.12s;
+}
+.modal-close:hover { color: var(--cream); border-color: var(--border2); }
+
+.modal-body {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+}
+.modal-left {
+  background: var(--lift);
+  border-right: 1px solid var(--border);
+  border-radius: 14px 0 0 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.modal-card-img {
+  width: 100%;
+  max-width: 190px;
+  aspect-ratio: 2.5/3.5;
+  object-fit: contain;
+  border-radius: 8px;
+  filter: drop-shadow(0 4px 16px rgba(0,0,0,0.5));
+}
+.modal-types { display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; }
+.type-badge {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.type-Fire     { background:#7a2a10; color:#ffa060; }
+.type-Water    { background:#102a5a; color:#60a0f0; }
+.type-Grass    { background:#0e3a18; color:#60c870; }
+.type-Lightning{ background:#5a4800; color:#f8d030; }
+.type-Psychic  { background:#4a0a3a; color:#e860d0; }
+.type-Fighting { background:#4a0a0a; color:#e86060; }
+.type-Darkness { background:#1a1428; color:#9080c0; }
+.type-Metal    { background:#2a2a3a; color:#c0c0d8; }
+.type-Dragon   { background:#1a1040; color:#7060e8; }
+.type-Colorless{ background:#3a3020; color:#c8b888; }
+.type-Fairy    { background:#4a1830; color:#e080b0; }
+.type-default  { background:var(--lift); color:var(--muted); }
+
+.modal-right { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.modal-card-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.55rem;
+  color: var(--cream);
+  line-height: 1.1;
+}
+.modal-card-sub {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.modal-hp {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--dn);
+}
+
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.info-cell {
+  background: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+.info-cell .il { font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 2px; }
+.info-cell .iv { font-size: 0.82rem; font-weight: 500; color: var(--cream); }
+.info-cell .iv.mono { font-family: 'IBM Plex Mono', monospace; color: var(--gold); font-size: 0.9rem; }
+
+.section-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.attack-list { display: flex; flex-direction: column; gap: 5px; }
+.attack-row {
+  background: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.attack-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.attack-name { font-size: 0.84rem; font-weight: 600; color: var(--cream); }
+.attack-dmg {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--gold);
+}
+.attack-cost { display: flex; gap: 3px; margin-bottom: 3px; }
+.energy-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  font-size: 0.5rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.attack-text { font-size: 0.74rem; color: var(--muted); line-height: 1.5; }
+
+.ability-list { display: flex; flex-direction: column; gap: 5px; }
+.ability-row {
+  background: rgba(100,60,160,0.1);
+  border: 1px solid rgba(100,60,160,0.25);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.ability-name { font-size: 0.82rem; font-weight: 600; color: #b080e8; margin-bottom: 2px; }
+.ability-name span { font-size: 0.6rem; font-weight: 400; color: var(--muted); margin-right: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+.ability-text { font-size: 0.74rem; color: var(--muted); line-height: 1.5; }
+
+.price-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(95px,1fr)); gap: 5px; }
+.price-cell {
+  background: rgba(72,199,116,0.06);
+  border: 1px solid rgba(72,199,116,0.18);
+  border-radius: 6px;
+  padding: 7px 8px;
+}
+.price-cell.hi { background: rgba(72,199,116,0.12); border-color: rgba(72,199,116,0.35); }
+.price-cell .pcl { font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 2px; }
+.price-cell .pcv { font-family: 'IBM Plex Mono', monospace; font-size: 0.88rem; font-weight: 600; color: var(--up); }
+
+.grade-price-row {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 5px;
+}
+.gpr-cell {
+  border-radius: 6px;
+  padding: 7px 8px;
+  text-align: center;
+}
+.gpr-10 { background: rgba(240,192,64,0.07); border: 1px solid rgba(240,192,64,0.3); }
+.gpr-9  { background: rgba(72,199,116,0.06); border: 1px solid rgba(72,199,116,0.25); }
+.gpr-8  { background: rgba(80,144,224,0.06); border: 1px solid rgba(80,144,224,0.25); }
+.gpr-cell .gl { font-size: 0.56rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 2px; }
+.gpr-cell .gv { font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; font-weight: 600; }
+.gpr-10 .gv { color: var(--gold); }
+.gpr-9 .gv  { color: var(--up); }
+.gpr-8 .gv  { color: var(--blue); }
+
+.modal-footer {
+  display: flex; gap: 7px; flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.m-btn {
+  padding: 7px 14px; border-radius: var(--r);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem; font-weight: 500;
+  cursor: pointer; border: none;
+  transition: opacity 0.12s;
+  text-decoration: none;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.m-btn:hover { opacity: 0.8; }
+.m-btn-gold { background: var(--gold); color: var(--ink); }
+.m-btn-ghost { background: var(--lift); color: var(--muted); border: 1px solid var(--border2); }
+.m-btn-chart { background: var(--lift); color: var(--blue); border: 1px solid rgba(80,144,224,0.3); }
+
+/* ─────────────────────────────────────────────
+   CHART MODAL
+───────────────────────────────────────────── */
+.chart-overlay {
+  position: fixed; inset: 0; z-index: 600;
+  background: rgba(8,6,4,0.9);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.18s;
+}
+.chart-overlay.open { opacity: 1; pointer-events: all; }
+.chart-modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  width: 100%; max-width: 600px;
+  padding: 20px;
+  position: relative;
+  transform: scale(0.97);
+  transition: transform 0.18s;
+}
+.chart-overlay.open .chart-modal { transform: scale(1); }
+.chart-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.25rem;
+  color: var(--cream);
+  margin-bottom: 2px;
+}
+.chart-sub {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.chart-stat-row {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.cst {
+  background: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 8px;
+}
+.cst-l { font-family: 'IBM Plex Mono', monospace; font-size: 0.56rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 2px; }
+.cst-v { font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem; font-weight: 600; color: var(--gold); }
+.cst-v.up { color: var(--up); }
+.cst-v.dn { color: var(--dn); }
+.chart-wrap { position: relative; height: 220px; }
+.chart-close {
+  position: absolute; top: 14px; right: 14px;
+  background: var(--lift); border: 1px solid var(--border2);
+  color: var(--muted); border-radius: 6px;
+  width: 28px; height: 28px;
+  cursor: pointer; font-size: 0.88rem;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2;
+}
+.chart-close:hover { color: var(--cream); }
+
+/* ─────────────────────────────────────────────
+   RESPONSIVE
+───────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .sidebar { display: none; }
+  .modal-body { grid-template-columns: 1fr; }
+  .modal-left { border-right: none; border-radius: 14px 14px 0 0; border-bottom: 1px solid var(--border); }
+  .card-grid { grid-template-columns: repeat(auto-fill, minmax(130px,1fr)); gap: 10px; padding: 14px 14px 30px; }
+  .filter-bar, .set-ctrl, .set-header { padding-left: 14px; padding-right: 14px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-name">CardLedger</div>
+      <div class="brand-tag">Pokémon TCG Prices</div>
+    </div>
+    <div class="sidebar-search">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" id="set-search" placeholder="Filter sets…" autocomplete="off">
+    </div>
+    <div class="sidebar-sets" id="sidebar-sets">
+      <div class="state-center"><div class="spinner"></div></div>
+    </div>
+  </aside>
+
+  <!-- ═══ MAIN ═══ -->
+  <div class="main">
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="topbar-search-wrap">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="search" id="global-search" placeholder="Search any card by name…" autocomplete="off">
+      </div>
+      <div class="topbar-right">
+        <button class="topbar-btn" id="nav-sealed">📦 All Sealed</button>
+        <button class="topbar-btn" id="nav-graded">🏆 Graded</button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- VIEW: HOME (no set selected) -->
+      <div class="view active" id="v-home">
+        <div class="home-empty">
+          <div class="home-empty-icon">🃏</div>
+          <div class="home-empty-title">Select a set</div>
+          <div class="home-empty-sub">Choose any Pokémon TCG expansion from the sidebar to browse cards, sealed products, and live prices.</div>
+        </div>
+      </div>
+
+      <!-- VIEW: SET DETAIL -->
+      <div class="view" id="v-set">
+        <div class="set-header">
+          <div class="set-header-top">
+            <div class="set-logo-wrap">
+              <img id="set-logo" src="" alt="" style="display:none" onerror="this.style.display='none'">
+              <span id="set-logo-text" class="set-logo-text" style="display:none"></span>
+            </div>
+            <div class="set-header-meta">
+              <div class="set-header-name" id="set-name">—</div>
+              <div class="set-header-series" id="set-series">—</div>
+            </div>
+          </div>
+          <div class="set-header-stats" id="set-stats"></div>
+          <div class="tab-row">
+            <button class="tab-btn active" data-tab="cards">Cards</button>
+            <button class="tab-btn" data-tab="sealed">Sealed Products</button>
+          </div>
+        </div>
+
+        <!-- Cards tab -->
+        <div class="tab-panel active" id="tab-cards">
+          <div class="filter-bar">
+            <input type="search" id="card-filter" placeholder="Filter cards…">
+            <select id="rarity-filter"><option value="">All Rarities</option></select>
+            <select id="card-sort">
+              <option value="number">Card #</option>
+              <option value="name">Name</option>
+              <option value="price">Price ↓</option>
+            </select>
+            <span class="filter-count" id="card-count">— cards</span>
+          </div>
+          <div class="card-grid" id="card-grid">
+            <div class="state-center" style="grid-column:1/-1"><div class="spinner"></div><span>Loading cards…</span></div>
+          </div>
+        </div>
+
+        <!-- Sealed tab -->
+        <div class="tab-panel" id="tab-sealed">
+          <div class="filter-bar">
+            <input type="search" id="sealed-filter" placeholder="Filter products…">
+            <select id="sealed-sort">
+              <option value="name">Name</option>
+              <option value="price-d">Price ↓</option>
+              <option value="price-a">Price ↑</option>
+            </select>
+          </div>
+          <div class="sealed-grid" id="set-sealed-grid">
+            <div class="state-center" style="grid-column:1/-1"><div class="spinner"></div><span>Loading sealed products…</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW: GLOBAL SEARCH -->
+      <div class="view" id="v-gsr">
+        <div class="gsr-header">
+          <div class="gsr-title">Search Results</div>
+          <div class="gsr-meta" id="gsr-meta">—</div>
+        </div>
+        <div class="card-grid" id="gsr-grid"></div>
+      </div>
+
+      <!-- VIEW: ALL SEALED -->
+      <div class="view" id="v-sealed">
+        <div class="set-header" style="padding-bottom:0">
+          <div class="set-header-top" style="margin-bottom:14px">
+            <div class="set-header-meta">
+              <div class="set-header-name">Sealed Products</div>
+              <div class="set-header-series">Booster Boxes · Elite Trainer Boxes · Bundles</div>
+            </div>
+          </div>
+          <div class="filter-bar" style="padding:0 0 12px;border-bottom:none">
+            <input type="search" id="sealed-page-filter" placeholder="Search products…">
+            <select id="sealed-page-sort">
+              <option value="name">Name</option>
+              <option value="price-d">Price ↓</option>
+              <option value="price-a">Price ↑</option>
+            </select>
+            <select id="sealed-lang">
+              <option value="english">English</option>
+              <option value="japanese">Japanese</option>
+            </select>
+          </div>
+        </div>
+        <div class="sealed-grid" id="sealed-page-grid">
+          <div class="state-center" style="grid-column:1/-1"><div class="spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- VIEW: GRADED -->
+      <div class="view" id="v-graded">
+        <div class="set-header" style="padding-bottom:0">
+          <div class="set-header-top" style="margin-bottom:14px">
+            <div class="set-header-meta">
+              <div class="set-header-name">Graded Cards</div>
+              <div class="set-header-series">PSA · CGC · BGS — market prices</div>
+            </div>
+          </div>
+          <div class="filter-bar" style="padding:0 0 12px;border-bottom:none">
+            <input type="search" id="graded-filter" placeholder="Search graded cards…">
+            <select id="graded-sort">
+              <option value="psa10">PSA 10 ↓</option>
+              <option value="psa9">PSA 9 ↓</option>
+              <option value="name">Name A–Z</option>
+            </select>
+          </div>
+        </div>
+        <div class="graded-grid" id="graded-grid">
+          <div class="state-center" style="grid-column:1/-1"><div class="spinner"></div></div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ═══ CARD MODAL ═══ -->
+<div class="overlay" id="card-overlay">
+  <div class="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close">✕</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ═══ CHART MODAL ═══ -->
+<div class="chart-overlay" id="chart-overlay">
+  <div class="chart-modal">
+    <button class="chart-close" id="chart-close">✕</button>
+    <div class="chart-title" id="chart-title">Price History</div>
+    <div class="chart-sub" id="chart-sub">—</div>
+    <div class="chart-stat-row" id="chart-stats"></div>
+    <div class="chart-wrap"><canvas id="chart-canvas"></canvas></div>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════
+   CONFIG — PokemonPriceTracker API
+   Schema: card.tcgplayer.prices.{holofoil|normal|...}.{market,low,mid,high}
+           card.gradedPrices.{psa10,psa9,psa8}
+           card.images.{small,large}
+           card.set.{id,name,series}
+           card.priceHistory: [{date,price}]
+   Sets: { id, name, series, releaseDate, totalCards, logo }
+   Sealed: { name, productType, image, prices:{market,...}, priceHistory:[...] }
+════════════════════════════════════════════════ */
+const KEY  = 'pokeprice_pro_a1677b26f021f07b0c6cfe7453b4e9d21fca133f2a134282';
+const BASE = 'https://www.pokemonpricetracker.com/api/v2';
+
+async function api(path, params = {}) {
+  const url = new URL(BASE + path);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '' && v !== false)
+      url.searchParams.set(k, String(v));
+  }
+  const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + KEY } });
+  if (!r.ok) throw new Error(`${r.status} — ${(await r.text().catch(() => '')).slice(0, 120)}`);
+  return r.json();
+}
+
+/* ── State ── */
+let allSets = [], curSet = null, curCards = [], curSealed = [];
+let sealedAll = [], gradedAll = [];
+let chartInst = null, gsrTimer = null;
+
+/* ── View switcher ── */
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ── Price helpers ── */
+function mkt(item) {
+  const tp = item?.tcgplayer?.prices || item?.prices || item?.price || {};
+  // nested variants
+  for (const v of ['holofoil','reverseHolofoil','normal','1stEditionHolofoil','unlimitedHolofoil']) {
+    if (tp[v]?.market != null) return { val: tp[v].market, key: v, p: tp[v] };
+  }
+  // flat
+  if (tp.market != null) return { val: tp.market, key: 'market', p: tp };
+  if (item?.marketPrice != null) return { val: item.marketPrice, key: 'market', p: {} };
+  return null;
+}
+
+function trendOf(item) {
+  const h = item?.priceHistory || item?.history || [];
+  if (h.length >= 2) {
+    const s = [...h].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+    const f = s[0].price ?? 0, l = s[s.length-1].price ?? 0;
+    if (f > 0) { const c = (l-f)/f; return c > 0.02 ? 'up' : c < -0.02 ? 'dn' : 'fl'; }
+  }
+  const m = mkt(item);
+  if (!m) return 'fl';
+  const mid = m.p.mid ?? null;
+  if (mid != null && mid > 0) {
+    const c = (m.val - mid) / mid;
+    return c > 0.03 ? 'up' : c < -0.03 ? 'dn' : 'fl';
+  }
+  return 'fl';
+}
+
+function arrowEl(t) {
+  if (t === 'up') return '<span class="c-arrow arr-up">▲</span>';
+  if (t === 'dn') return '<span class="c-arrow arr-dn">▼</span>';
+  return '<span class="c-arrow arr-fl">—</span>';
+}
+
+function trendLabel(t) {
+  return t === 'up' ? 'Rising' : t === 'dn' ? 'Falling' : 'Stable';
+}
+
+function isHolo(card) {
+  const r = (card.rarity || '').toLowerCase();
+  return r.includes('holo') || r.includes('rare') || r.includes('illustration') ||
+         r.includes('ultra') || r.includes('secret') || r.includes('rainbow');
+}
+
+function energyDot(type) {
+  const c = {
+    Fire:'#b04010',Water:'#1050a0',Grass:'#207030',Lightning:'#906000',
+    Psychic:'#7010a0',Fighting:'#8a2010',Darkness:'#302060',Metal:'#506070',
+    Dragon:'#2010a0',Colorless:'#706050',Fairy:'#802060'
+  };
+  const bg = c[type] || '#404040';
+  return `<span class="energy-dot" style="background:${bg};color:#fff" title="${type}">${(type||'?')[0]}</span>`;
+}
+
+/* ── SETS ── */
+async function loadSets() {
+  try {
+    const d = await api('/sets', { limit: 500, sortBy: 'releaseDate', sortOrder: 'desc' });
+    allSets = d.data || d || [];
+    renderSidebar();
+  } catch(e) {
+    document.getElementById('sidebar-sets').innerHTML =
+      `<div class="state-center error"><span>Failed to load sets</span><span class="err-detail">${e.message}</span></div>`;
+  }
+}
+
+function renderSidebar() {
+  const q = document.getElementById('set-search').value.toLowerCase();
+  const sets = allSets.filter(s => !q || (s.name || '').toLowerCase().includes(q));
+  const el = document.getElementById('sidebar-sets');
+  if (!sets.length) { el.innerHTML = '<div class="state-center" style="min-height:80px">No sets found</div>'; return; }
+  el.innerHTML = '';
+
+  // Group by series
+  const map = new Map();
+  sets.forEach(s => {
+    const k = s.series || 'Other';
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(s);
+  });
+
+  map.forEach((items, ser) => {
+    const lbl = document.createElement('div');
+    lbl.className = 'series-group-label';
+    lbl.textContent = ser;
+    el.appendChild(lbl);
+    items.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'set-row' + (curSet?.id === s.id ? ' active' : '');
+      row.innerHTML = `<span class="set-row-name">${s.name}</span><span class="set-row-count">${s.totalCards ?? s.total ?? '?'}</span>`;
+      row.addEventListener('click', () => openSet(s));
+      el.appendChild(row);
+    });
+  });
+}
+
+/* ── SET DETAIL ── */
+async function openSet(set) {
+  curSet = set; curCards = []; curSealed = [];
+  showView('v-set');
+
+  // Sidebar highlight
+  renderSidebar();
+
+  // Header
+  const logo = set.logo || set.logoUrl || '';
+  const logoImg = document.getElementById('set-logo');
+  const logoTxt = document.getElementById('set-logo-text');
+  if (logo) {
+    logoImg.src = logo; logoImg.style.display = 'block';
+    logoImg.onerror = () => { logoImg.style.display = 'none'; logoTxt.style.display = 'block'; logoTxt.textContent = set.name; };
+    logoTxt.style.display = 'none';
+  } else {
+    logoImg.style.display = 'none';
+    logoTxt.style.display = 'block';
+    logoTxt.textContent = set.name;
+  }
+  document.getElementById('set-name').textContent   = set.name || '—';
+  document.getElementById('set-series').textContent = (set.series || '') + (set.releaseDate ? '  ·  ' + set.releaseDate : '');
+  document.getElementById('set-stats').innerHTML = '';
+
+  // Reset tabs to cards
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'cards'));
+  document.getElementById('tab-cards').classList.add('active');
+  document.getElementById('tab-sealed').classList.remove('active');
+
+  // Reset filters
+  document.getElementById('card-filter').value = '';
+  document.getElementById('card-sort').value = 'number';
+  document.getElementById('sealed-filter').value = '';
+
+  // Loading states
+  document.getElementById('card-grid').innerHTML = '<div class="state-center" style="grid-column:1/-1"><div class="spinner"></div><span>Loading cards…</span></div>';
+  document.getElementById('set-sealed-grid').innerHTML = '<div class="state-center" style="grid-column:1/-1"><div class="spinner"></div><span>Loading sealed products…</span></div>';
+
+  // Fetch both in parallel
+  await Promise.all([fetchCards(set), fetchSetSealed(set)]);
+}
+
+async function fetchCards(set) {
+  try {
+    const params = {
+      fetchAllInSet: true,
+      includeHistory: true,
+      days: 3,
+      sortBy: 'price',
+      sortOrder: 'desc',
+      limit: 100
+    };
+    // PPT prefers setId (the set.id like "base1", "swsh1")
+    if (set.id) params.setId = set.id;
+    else params.set = set.name;
+
+    const d = await api('/cards', params);
+    curCards = d.data || d.cards || (Array.isArray(d) ? d : []);
+
+    // Compute set stats
+    const prices = curCards.map(c => mkt(c)?.val).filter(v => v != null);
+    const total  = prices.reduce((a, b) => a + b, 0);
+    const top    = prices.length ? Math.max(...prices) : null;
+    document.getElementById('set-stats').innerHTML = `
+      <div class="stat-block"><div class="stat-label">Cards Loaded</div><div class="stat-val">${curCards.length}</div></div>
+      <div class="stat-block"><div class="stat-label">Set Value</div><div class="stat-val">${prices.length ? '$' + total.toFixed(0) : '—'}</div></div>
+      <div class="stat-block"><div class="stat-label">Top Card</div><div class="stat-val">${top ? '$' + top.toFixed(2) : '—'}</div></div>
+      <div class="stat-block"><div class="stat-label">Released</div><div class="stat-val plain">${set.releaseDate || '—'}</div></div>`;
+
+    // Rarity filter
+    const rarities = [...new Set(curCards.map(c => c.rarity).filter(Boolean))].sort();
+    const rf = document.getElementById('rarity-filter');
+    rf.innerHTML = '<option value="">All Rarities</option>' + rarities.map(r => `<option>${r}</option>`).join('');
+
+    renderCards();
+  } catch(e) {
+    document.getElementById('card-grid').innerHTML = `<div class="state-center error" style="grid-column:1/-1"><span>Failed to load cards</span><span class="err-detail">${e.message}</span></div>`;
+  }
+}
+
+function renderCards() {
+  const q    = document.getElementById('card-filter').value.toLowerCase();
+  const rar  = document.getElementById('rarity-filter').value;
+  const sort = document.getElementById('card-sort').value;
+  let cards  = [...curCards];
+  if (q)   cards = cards.filter(c => (c.name || '').toLowerCase().includes(q));
+  if (rar) cards = cards.filter(c => c.rarity === rar);
+  if (sort === 'name')  cards.sort((a, b) => (a.name||'').localeCompare(b.name||''));
+  else if (sort === 'price') cards.sort((a, b) => (mkt(b)?.val||0) - (mkt(a)?.val||0));
+  else cards.sort((a, b) => (parseInt(a.number||0)||999) - (parseInt(b.number||0)||999));
+
+  document.getElementById('card-count').textContent = cards.length + ' card' + (cards.length !== 1 ? 's' : '');
+  const grid = document.getElementById('card-grid');
+  grid.innerHTML = '';
+  if (!cards.length) {
+    grid.innerHTML = '<div class="state-center" style="grid-column:1/-1">No cards match.</div>';
+    return;
+  }
+  cards.forEach(c => grid.appendChild(makeCardTile(c)));
+}
+
+function makeCardTile(card) {
+  const el = document.createElement('div');
+  el.className = 'c-tile' + (isHolo(card) ? ' holo' : '');
+  const img = card.images?.small || card.images?.large || card.image || card.imageUrl || '';
+  const p = mkt(card), t = trendOf(card);
+  const num = card.number || '';
+  el.innerHTML = `
+    <div class="c-tile-inner">
+      <div class="c-img-wrap">
+        ${img ? `<img src="${img}" alt="${card.name||''}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'no-art\\'>${(card.name||'').slice(0,14)}</div>'">` : `<div class="no-art">${(card.name||'').slice(0,14)}</div>`}
+        ${num ? `<span class="c-num">${num}</span>` : ''}
+      </div>
+      <div class="c-info">
+        <div class="c-name">${card.name || '—'}</div>
+        <div class="c-rarity">${card.rarity || '—'}</div>
+        ${p ? `<div class="c-price-row"><span class="c-price">$${p.val.toFixed(2)}</span>${arrowEl(t)}</div>` : ''}
+      </div>
+    </div>`;
+  el.addEventListener('click', () => openCardModal(card));
+  return el;
+}
+
+/* ── SET SEALED TAB ── */
+async function fetchSetSealed(set) {
+  try {
+    const params = { includeHistory: true, days: 30, limit: 50 };
+    if (set.id) params.setId = set.id;
+    else params.set = set.name;
+    const d = await api('/sealed-products', params);
+    curSealed = d.data || d.products || (Array.isArray(d) ? d : []);
+    renderSetSealed();
+  } catch(e) {
+    document.getElementById('set-sealed-grid').innerHTML = `<div class="state-center error" style="grid-column:1/-1"><span>Failed to load sealed products</span><span class="err-detail">${e.message}</span></div>`;
+  }
+}
+
+function renderSetSealed() {
+  const q    = document.getElementById('sealed-filter').value.toLowerCase();
+  const sort = document.getElementById('sealed-sort').value;
+  let prods  = [...curSealed].filter(p => !q || (p.name||'').toLowerCase().includes(q));
+  const px = p => mkt(p)?.val ?? 0;
+  if (sort === 'price-d') prods.sort((a,b) => px(b) - px(a));
+  else if (sort === 'price-a') prods.sort((a,b) => px(a) - px(b));
+  else prods.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  const grid = document.getElementById('set-sealed-grid');
+  if (!prods.length) { grid.innerHTML = '<div class="state-center" style="grid-column:1/-1">No sealed products for this set.</div>'; return; }
+  grid.innerHTML = '';
+  prods.forEach(p => grid.appendChild(makeSealedTile(p)));
+}
+
+/* ── SEALED TILE (shared) ── */
+function makeSealedTile(product) {
+  const el = document.createElement('div');
+  el.className = 's-tile';
+  const p = mkt(product), t = trendOf(product);
+  const img = product.image || product.imageUrl || product.images?.small || '';
+  const type = product.productType || product.type || product.category || '';
+  el.innerHTML = `
+    <div class="s-tile-img">
+      ${img ? `<img src="${img}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div style="color:var(--muted);font-size:0.72rem;font-style:italic">No Image</div>'}
+    </div>
+    <div class="s-tile-body">
+      <div class="s-tile-name">${product.name || '—'}</div>
+      ${type ? `<div class="s-tile-type">${type}</div>` : ''}
+      <div class="s-tile-price-row">
+        <span class="s-tile-price">${p ? '$' + Number(p.val).toFixed(2) : '—'}</span>
+        ${p ? arrowEl(t) : ''}
+        <span class="s-tile-trend">${trendLabel(t)}</span>
+      </div>
+    </div>`;
+  el.addEventListener('click', () => openChart(product, product.name, type || 'Sealed'));
+  return el;
+}
+
+/* ── CARD MODAL ── */
+async function openCardModal(card) {
+  const body = document.getElementById('modal-body');
+  body.innerHTML = '<div class="state-center" style="padding:3rem"><div class="spinner"></div></div>';
+  document.getElementById('card-overlay').classList.add('open');
+
+  try {
+    const params = card.id
+      ? { tcgPlayerId: card.id, includeHistory: true, days: 3 }
+      : { search: (card.name || '') + (card.set?.name ? ' ' + card.set.name : ''), includeHistory: true, days: 3, limit: 1 };
+    const d = await api('/cards', params);
+    const full = (d.data || d.cards || [d])[0] || card;
+    renderModal(full);
+  } catch(e) {
+    renderModal(card);
+  }
+}
+
+function renderModal(card) {
+  const img = card.images?.large || card.images?.small || card.image || card.imageUrl || '';
+  const p   = mkt(card), t = trendOf(card);
+  const tp  = card.tcgplayer?.prices || card.prices || card.price || {};
+  const gp  = card.gradedPrices || {};
+  const types = Array.isArray(card.types) ? card.types : (card.cardType ? [card.cardType] : []);
+
+  // Price rows
+  let priceRows = '';
+  const VARIANTS = { normal:'Normal', holofoil:'Holofoil', reverseHolofoil:'Rev Holo', '1stEditionHolofoil':'1st Ed' };
+  const PKEYS = ['market','mid','low','high','directLow'];
+  const PLBL  = { market:'Market', mid:'Mid', low:'Low', high:'High', directLow:'Dir Low' };
+  const hasNested = Object.keys(VARIANTS).some(v => tp[v]?.market != null);
+  if (hasNested) {
+    Object.entries(VARIANTS).forEach(([v, lbl]) => {
+      if (!tp[v]) return;
+      PKEYS.filter(k => tp[v][k] != null).forEach(k => {
+        priceRows += `<div class="price-cell ${k==='market'?'hi':''}"><div class="pcl">${lbl} ${PLBL[k]||k}</div><div class="pcv">$${Number(tp[v][k]).toFixed(2)}</div></div>`;
+      });
+    });
+  } else {
+    PKEYS.filter(k => tp[k] != null).forEach(k => {
+      priceRows += `<div class="price-cell ${k==='market'?'hi':''}"><div class="pcl">${PLBL[k]||k}</div><div class="pcv">$${Number(tp[k]).toFixed(2)}</div></div>`;
+    });
+  }
+
+  // Graded prices
+  let gradedRows = '';
+  if (gp.psa10 != null) gradedRows += `<div class="gpr-cell gpr-10"><div class="gl">PSA 10</div><div class="gv">$${Number(gp.psa10).toFixed(0)}</div></div>`;
+  if (gp.psa9  != null) gradedRows += `<div class="gpr-cell gpr-9"><div class="gl">PSA 9</div><div class="gv">$${Number(gp.psa9).toFixed(0)}</div></div>`;
+  if (gp.psa8  != null) gradedRows += `<div class="gpr-cell gpr-8"><div class="gl">PSA 8</div><div class="gv">$${Number(gp.psa8).toFixed(0)}</div></div>`;
+
+  // Attacks
+  let attacksH = '';
+  if (card.attacks?.length) {
+    attacksH = `<div><div class="section-label">Attacks</div><div class="attack-list">` +
+      card.attacks.map(a => `<div class="attack-row">
+        <div class="attack-top">
+          <div><div class="attack-cost">${(a.cost||[]).map(energyDot).join('')}</div><div class="attack-name">${a.name}</div></div>
+          ${a.damage ? `<div class="attack-dmg">${a.damage}</div>` : ''}
+        </div>${a.text ? `<div class="attack-text">${a.text}</div>` : ''}
+      </div>`).join('') + `</div></div>`;
+  }
+
+  // Abilities
+  let abilitiesH = '';
+  if (card.abilities?.length) {
+    abilitiesH = `<div><div class="section-label">Abilities</div><div class="ability-list">` +
+      card.abilities.map(a => `<div class="ability-row">
+        <div class="ability-name">${a.type ? `<span>${a.type}</span>` : ''}${a.name}</div>
+        ${a.text ? `<div class="ability-text">${a.text}</div>` : ''}
+      </div>`).join('') + `</div></div>`;
+  }
+
+  const hasChart = (card.priceHistory?.length || 0) > 0 || p != null;
+
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-body">
+      <div class="modal-left">
+        ${img ? `<img class="modal-card-img" src="${img}" alt="${card.name||''}" onerror="this.style.display='none'">` : ''}
+        <div class="modal-types">${types.map(t => `<span class="type-badge type-${t||'default'}">${t||'—'}</span>`).join('')}</div>
+        ${card.weaknesses?.length ? `<div style="font-size:0.68rem;color:var(--muted);text-align:center">Weak: ${card.weaknesses.map(w=>`<b style="color:var(--dn)">${w.type}</b>`).join(', ')}</div>` : ''}
+        ${card.retreatCost?.length ? `<div style="font-size:0.68rem;color:var(--muted);text-align:center">Retreat: ${card.retreatCost.map(energyDot).join('')}</div>` : ''}
+        ${p ? `<div style="text-align:center;margin-top:4px"><span style="font-family:'IBM Plex Mono',monospace;font-size:1.2rem;font-weight:600;color:var(--gold)">$${p.val.toFixed(2)}</span> ${arrowEl(t)}</div>` : ''}
+        ${card.artist ? `<div style="font-size:0.65rem;color:var(--muted);text-align:center;margin-top:4px">✏ ${card.artist}</div>` : ''}
+      </div>
+      <div class="modal-right">
+        <div>
+          <div class="modal-card-name">${card.name || '—'}</div>
+          <div class="modal-card-sub">${[card.supertype,...(card.subtypes||[])].filter(Boolean).join(' · ')} ${card.hp ? `<span class="modal-hp">  ${card.hp} HP</span>` : ''}</div>
+        </div>
+        <div class="info-grid">
+          <div class="info-cell"><div class="il">Set</div><div class="iv">${card.set?.name || '—'}</div></div>
+          <div class="info-cell"><div class="il">Number</div><div class="iv mono">${card.number || '—'}</div></div>
+          <div class="info-cell"><div class="il">Rarity</div><div class="iv">${card.rarity || '—'}</div></div>
+          <div class="info-cell"><div class="il">Artist</div><div class="iv">${card.artist || '—'}</div></div>
+          ${card.regulationMark ? `<div class="info-cell"><div class="il">Regulation</div><div class="iv mono">${card.regulationMark}</div></div>` : ''}
+          ${card.flavorText ? `<div class="info-cell" style="grid-column:1/-1"><div class="il">Flavor</div><div class="iv" style="font-style:italic;font-size:0.74rem;color:var(--muted);line-height:1.5">"${card.flavorText}"</div></div>` : ''}
+        </div>
+        ${abilitiesH}
+        ${attacksH}
+        ${priceRows ? `<div><div class="section-label">TCGPlayer Prices</div><div class="price-grid">${priceRows}</div></div>` : ''}
+        ${gradedRows ? `<div><div class="section-label">Graded Prices (PSA)</div><div class="grade-price-row">${gradedRows}</div></div>` : ''}
+        <div class="modal-footer">
+          ${card.tcgplayer?.url ? `<a class="m-btn m-btn-gold" href="${card.tcgplayer.url}" target="_blank" rel="noopener">Buy on TCGPlayer</a>` : ''}
+          ${hasChart ? `<button class="m-btn m-btn-chart" id="open-chart-btn">📈 Price History</button>` : ''}
+          <button class="m-btn m-btn-ghost" id="modal-close2">Close</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('modal-close2').addEventListener('click', closeModal);
+  document.getElementById('open-chart-btn')?.addEventListener('click', () => {
+    closeModal();
+    openChart(card, card.name, card.set?.name || '');
+  });
+}
+
+function closeModal() { document.getElementById('card-overlay').classList.remove('open'); }
+
+/* ── PRICE CHART ── */
+function openChart(item, name, sub) {
+  const hist = item.priceHistory || item.history || [];
+  const sorted = [...hist].sort((a,b) => new Date(a.date||0) - new Date(b.date||0));
+  const p  = mkt(item);
+  const tp = item.tcgplayer?.prices || item.prices || item.price || {};
+  const flatP = tp.normal || tp.holofoil || tp;
+
+  document.getElementById('chart-title').textContent = name || 'Price History';
+  document.getElementById('chart-sub').textContent   = sub || '';
+
+  let labels = [], data = [];
+  if (sorted.length >= 2) {
+    labels = sorted.map(x => x.date ? x.date.slice(5) : new Date(x.timestamp||0).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    data   = sorted.map(x => x.price ?? x.marketPrice ?? 0);
+  } else {
+    const snap = [
+      { l: 'Low',    v: flatP.low    ?? null },
+      { l: 'Mid',    v: flatP.mid    ?? null },
+      { l: 'Market', v: p?.val       ?? null },
+      { l: 'High',   v: flatP.high   ?? null },
+    ].filter(x => x.v != null);
+    labels = snap.map(x => x.l);
+    data   = snap.map(x => x.v);
+  }
+
+  const f = data[0], l = data[data.length-1];
+  const chg = (f && f > 0) ? ((l-f)/f*100) : null;
+
+  document.getElementById('chart-stats').innerHTML = `
+    <div class="cst"><div class="cst-l">Market</div><div class="cst-v">${p ? '$'+p.val.toFixed(2) : '—'}</div></div>
+    <div class="cst"><div class="cst-l">Change</div><div class="cst-v ${chg!=null?(chg>=0?'up':'dn'):''}">${chg!=null?(chg>=0?'+':'')+chg.toFixed(1)+'%':'—'}</div></div>
+    <div class="cst"><div class="cst-l">Low</div><div class="cst-v">${flatP.low!=null?'$'+Number(flatP.low).toFixed(2):'—'}</div></div>
+    <div class="cst"><div class="cst-l">High</div><div class="cst-v">${flatP.high!=null?'$'+Number(flatP.high).toFixed(2):'—'}</div></div>`;
+
+  document.getElementById('chart-overlay').classList.add('open');
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+
+  const ctx = document.getElementById('chart-canvas').getContext('2d');
+  if (data.length < 2) {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.fillStyle = '#7a7060'; ctx.font = '13px Inter, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Not enough price data.', ctx.canvas.width/2, 110);
+    return;
+  }
+
+  const up = l >= f;
+  const lc = up ? '#48c774' : '#e84040';
+  const fc = up ? 'rgba(72,199,116,0.08)' : 'rgba(232,64,64,0.08)';
+  const ptc = labels.map(x => x === 'Market' ? '#f0c040' : lc);
+  const ptr = labels.map(x => x === 'Market' ? 6 : 3);
+
+  chartInst = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{ data, borderColor: lc, backgroundColor: fc,
+      borderWidth: 2, pointBackgroundColor: ptc, pointRadius: ptr, pointHoverRadius: 6,
+      fill: true, tension: 0.3 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1c1814', borderColor: '#453c34', borderWidth: 1,
+          titleColor: '#e8e0d0', bodyColor: '#f0c040',
+          callbacks: { label: c => ' $' + Number(c.parsed.y).toFixed(2) }
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(53,46,40,0.6)' }, ticks: { color: '#7a7060', font: { family: 'IBM Plex Mono', size: 9 }, maxTicksLimit: 10 } },
+        y: { grid: { color: 'rgba(53,46,40,0.6)' }, ticks: { color: '#7a7060', font: { family: 'IBM Plex Mono', size: 10 }, callback: v => '$' + Number(v).toFixed(2) } }
+      }
+    }
+  });
+}
+
+function closeChart() {
+  document.getElementById('chart-overlay').classList.remove('open');
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+}
+
+/* ── GLOBAL SEARCH ── */
+document.getElementById('global-search').addEventListener('input', e => {
+  const q = e.target.value.trim();
+  clearTimeout(gsrTimer);
+  if (!q) { if (curSet) showView('v-set'); else showView('v-home'); return; }
+  gsrTimer = setTimeout(() => runSearch(q), 500);
+});
+
+async function runSearch(q) {
+  showView('v-gsr');
+  document.getElementById('gsr-meta').textContent = `Searching for "${q}"…`;
+  document.getElementById('gsr-grid').innerHTML = '<div class="state-center" style="grid-column:1/-1"><div class="spinner"></div></div>';
+  try {
+    const d = await api('/cards', { search: q, includeHistory: true, days: 3, limit: 24 });
+    const cards = d.data || d.cards || (Array.isArray(d) ? d : []);
+    document.getElementById('gsr-meta').textContent = `${cards.length} result${cards.length!==1?'s':''} for "${q}"`;
+    const grid = document.getElementById('gsr-grid');
+    grid.innerHTML = '';
+    if (!cards.length) { grid.innerHTML = '<div class="state-center" style="grid-column:1/-1">No cards found.</div>'; return; }
+    cards.forEach(c => grid.appendChild(makeCardTile(c)));
+  } catch(e) {
+    document.getElementById('gsr-grid').innerHTML = `<div class="state-center error" style="grid-column:1/-1"><span>Search failed</span><span class="err-detail">${e.message}</span></div>`;
+  }
+}
+
+/* ── FULL SEALED PAGE ── */
+async function loadSealedPage(lang) {
+  showView('v-sealed');
+  document.getElementById('sealed-page-grid').innerHTML = '<div class="state-center" style="grid-column:1/-1"><div class="spinner"></div></div>';
+  try {
+    const d = await api('/sealed-products', { language: lang || 'english', includeHistory: true, days: 30, limit: 100, sortBy: 'name', sortOrder: 'asc' });
+    sealedAll = d.data || d.products || (Array.isArray(d) ? d : []);
+    renderSealedPage();
+  } catch(e) {
+    document.getElementById('sealed-page-grid').innerHTML = `<div class="state-center error" style="grid-column:1/-1"><span>Failed to load</span><span class="err-detail">${e.message}</span></div>`;
+  }
+}
+
+function renderSealedPage() {
+  const q = document.getElementById('sealed-page-filter').value.toLowerCase();
+  const s = document.getElementById('sealed-page-sort').value;
+  let ps = [...sealedAll].filter(p => !q || (p.name||'').toLowerCase().includes(q));
+  const px = p => mkt(p)?.val ?? 0;
+  if (s === 'price-d') ps.sort((a,b) => px(b)-px(a));
+  else if (s === 'price-a') ps.sort((a,b) => px(a)-px(b));
+  else ps.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  const g = document.getElementById('sealed-page-grid');
+  if (!ps.length) { g.innerHTML = '<div class="state-center" style="grid-column:1/-1">No products found.</div>'; return; }
+  g.innerHTML = '';
+  ps.forEach(p => g.appendChild(makeSealedTile(p)));
+}
+
+/* ── GRADED PAGE ── */
+async function loadGradedPage() {
+  showView('v-graded');
+  document.getElementById('graded-grid').innerHTML = '<div class="state-center" style="grid-column:1/-1"><div class="spinner"></div></div>';
+  try {
+    const d = await api('/cards', { includeEbay: true, sortBy: 'price', sortOrder: 'desc', limit: 50 });
+    gradedAll = (d.data || d.cards || (Array.isArray(d) ? d : [])).filter(c => {
+      const g = c.gradedPrices || {};
+      return g.psa10 != null || g.psa9 != null || g.psa8 != null;
+    });
+    renderGraded();
+  } catch(e) {
+    document.getElementById('graded-grid').innerHTML = `<div class="state-center error" style="grid-column:1/-1"><span>Failed to load graded data</span><span class="err-detail">${e.message}</span><span style="font-size:0.72rem;color:var(--muted);margin-top:4px">Requires API plan credits (includeEbay)</span></div>`;
+  }
+}
+
+function renderGraded() {
+  const q = document.getElementById('graded-filter').value.toLowerCase();
+  const s = document.getElementById('graded-sort').value;
+  let cards = [...gradedAll].filter(c => !q || (c.name||'').toLowerCase().includes(q));
+  const gp = c => c.gradedPrices || {};
+  if (s === 'psa10') cards.sort((a,b) => (gp(b).psa10||0)-(gp(a).psa10||0));
+  else if (s === 'psa9') cards.sort((a,b) => (gp(b).psa9||0)-(gp(a).psa9||0));
+  else cards.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  const g = document.getElementById('graded-grid');
+  if (!cards.length) { g.innerHTML = '<div class="state-center" style="grid-column:1/-1">No graded cards found.</div>'; return; }
+  g.innerHTML = '';
+  cards.forEach(c => g.appendChild(makeGradedTile(c)));
+}
+
+function makeGradedTile(card) {
+  const el = document.createElement('div');
+  el.className = 'g-tile';
+  const p  = mkt(card), t = trendOf(card);
+  const gp = card.gradedPrices || {};
+  const img = card.images?.small || card.images?.large || card.image || '';
+  el.innerHTML = `
+    <div class="g-tile-top">
+      ${img ? `<img class="g-tile-img" src="${img}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
+      <div class="g-tile-info">
+        <div class="g-tile-name">${card.name || '—'}</div>
+        <div class="g-tile-sub">${card.set?.name || ''} ${card.number ? '· #'+card.number : ''}</div>
+        <div class="g-tile-sub">${card.rarity || ''}</div>
+        ${p ? `<div class="g-tile-raw">Raw: <span>$${p.val.toFixed(2)}</span> ${arrowEl(t)}</div>` : ''}
+      </div>
+    </div>
+    <div class="grade-row">
+      <div class="grade-cell g10"><div class="gc-l">PSA 10</div><div class="gc-v">${gp.psa10!=null?'$'+Number(gp.psa10).toFixed(0):'—'}</div></div>
+      <div class="grade-cell g9"><div class="gc-l">PSA 9</div><div class="gc-v">${gp.psa9!=null?'$'+Number(gp.psa9).toFixed(0):'—'}</div></div>
+      <div class="grade-cell g8"><div class="gc-l">PSA 8</div><div class="gc-v">${gp.psa8!=null?'$'+Number(gp.psa8).toFixed(0):'—'}</div></div>
+    </div>`;
+  el.addEventListener('click', () => openCardModal(card));
+  return el;
+}
+
+/* ── TAB SWITCHING ── */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const id = btn.dataset.tab;
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + id));
+  });
+});
+
+/* ── EVENTS ── */
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('card-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+document.getElementById('chart-close').addEventListener('click', closeChart);
+document.getElementById('chart-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeChart(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeChart(); } });
+
+document.getElementById('set-search').addEventListener('input', renderSidebar);
+document.getElementById('card-filter').addEventListener('input', renderCards);
+document.getElementById('rarity-filter').addEventListener('change', renderCards);
+document.getElementById('card-sort').addEventListener('change', renderCards);
+document.getElementById('sealed-filter').addEventListener('input', renderSetSealed);
+document.getElementById('sealed-sort').addEventListener('change', renderSetSealed);
+
+document.getElementById('nav-sealed').addEventListener('click', () => {
+  if (!sealedAll.length) loadSealedPage(document.getElementById('sealed-lang').value);
+  else showView('v-sealed');
+});
+document.getElementById('nav-graded').addEventListener('click', () => {
+  if (!gradedAll.length) loadGradedPage();
+  else showView('v-graded');
+});
+document.getElementById('sealed-page-filter').addEventListener('input', renderSealedPage);
+document.getElementById('sealed-page-sort').addEventListener('change', renderSealedPage);
+document.getElementById('sealed-lang').addEventListener('change', e => loadSealedPage(e.target.value));
+document.getElementById('graded-filter').addEventListener('input', renderGraded);
+document.getElementById('graded-sort').addEventListener('change', renderGraded);
+
+/* ── BOOT ── */
+loadSets();
+</script>
+</body>
+</html>
